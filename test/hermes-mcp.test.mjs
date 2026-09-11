@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createMcpRequestHandler, TOOL_DEFINITIONS } from "../dist/hermes-mcp.js";
-import { getMemoryBankClient, hermesConfigFromEnv, MemoryBankService, resetMemoryBankClientsForTests, setMemoryBankClientFactoryForTests } from "../dist/memorybank-core.js";
+import { getMemoryBankClient, hermesConfigFromEnv, MemoryBankService, parentName, resetMemoryBankClientsForTests, setMemoryBankClientFactoryForTests } from "../dist/memorybank-core.js";
 
 const operation = (value = {}) => ({ promise: async () => [value] });
 const config = { projectId: "project", location: "us-central1", reasoningEngineId: "engine", scope: { shared_scope: "team" } };
@@ -21,7 +21,7 @@ function mockClient(overrides = {}) {
     createMemory: async () => [operation()],
     deleteMemory: async () => [operation()],
     updateMemory: async () => [operation({ name: "memories/one", fact: "Correct" })],
-    getMemory: async () => [{ fact: "Old fact" }],
+    getMemory: async () => [{ fact: "Old fact", scope: { shared_scope: "team" } }],
     generateMemories: async () => [operation()],
     listMemories: async () => [[{ name: "memories/one", topics: ["engineering"] }], undefined, {}],
     ...overrides,
@@ -92,7 +92,7 @@ test("correct fallback restores the old fact when regeneration fails", async () 
   const calls = [];
   const service = new MemoryBankService(config, mockClient({
     updateMemory: async () => { throw Object.assign(new Error("unsupported"), { code: 12 }); },
-    getMemory: async () => [{ fact: "Old fact" }],
+    getMemory: async () => [{ fact: "Old fact", scope: { shared_scope: "team" } }],
     deleteMemory: async () => { calls.push("delete"); return [operation()]; },
     generateMemories: async () => { calls.push("generate"); throw new Error("generation failed"); },
     createMemory: async (input) => { calls.push(input.memory.fact); return [operation({ name: "memories/restored" })]; },
@@ -106,7 +106,7 @@ test("correct fallback restores the old fact when regeneration fails", async () 
 test("correct fallback reports unrecovered failures without claiming success", async () => {
   const service = new MemoryBankService(config, mockClient({
     updateMemory: async () => { throw Object.assign(new Error("unsupported"), { code: 12 }); },
-    getMemory: async () => [{ fact: "Old fact" }],
+    getMemory: async () => [{ fact: "Old fact", scope: { shared_scope: "team" } }],
     generateMemories: async () => { throw new Error("generation failed"); },
     createMemory: async () => { throw new Error("restore failed"); },
   }));
@@ -132,6 +132,121 @@ test("stats paginates and search applies configured distance filtering", async (
   assert.deepEqual((await service.search("query")).map((memory) => memory.fact), ["keep"]);
   assert.deepEqual(await service.stats(), { totalMemories: 2, byTopic: { one: 1, two: 1 }, scope: { shared_scope: "team" } });
   assert.deepEqual(pages, [undefined, "next"]);
+});
+
+test("forget rejects a resource name belonging to a foreign reasoning engine", async () => {
+  const calls = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => { calls.push("getMemory"); return [{ scope: { shared_scope: "team" } }]; },
+    deleteMemory: async () => { calls.push("deleteMemory"); return [operation()]; },
+  }));
+  const foreignName = "projects/other-project/locations/us-central1/reasoningEngines/other-engine/memories/one";
+  await assert.rejects(() => service.forget(foreignName), /must be a bare memory ID or a full resource name/);
+  assert.deepEqual(calls, [], "no lookup or mutation should occur for a foreign-engine name");
+});
+
+test("forget rejects a same-engine memory belonging to a different scope", async () => {
+  const calls = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => { calls.push("getMemory"); return [{ scope: { shared_scope: "other-team" } }]; },
+    deleteMemory: async () => { calls.push("deleteMemory"); return [operation()]; },
+  }));
+  await assert.rejects(() => service.forget("one"), /Refusing to mutate: memory does not belong to the configured scope/);
+  assert.deepEqual(calls, ["getMemory"], "must verify scope before any mutation, and must not delete on mismatch");
+});
+
+test("forget rejects when the target memory has no scope at all", async () => {
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => [{ fact: "no scope field" }],
+  }));
+  await assert.rejects(() => service.forget("one"), /Refusing to mutate: memory does not belong to the configured scope/);
+});
+
+test("forget rejects when scope verification lookup fails, and does not mutate", async () => {
+  const calls = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => { throw new Error("not found"); },
+    deleteMemory: async () => { calls.push("deleteMemory"); return [operation()]; },
+  }));
+  await assert.rejects(() => service.forget("one"), /Cannot verify memory scope before mutating/);
+  assert.deepEqual(calls, []);
+});
+
+test("forget succeeds for a bare ID or full same-engine, same-scope resource name", async () => {
+  const deletedNames = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => [{ scope: { shared_scope: "team" } }],
+    deleteMemory: async (input) => { deletedNames.push(input.name); return [operation()]; },
+  }));
+  await service.forget("one");
+  await service.forget(`${parentName(config)}/memories/two`);
+  assert.deepEqual(deletedNames, [`${parentName(config)}/memories/one`, `${parentName(config)}/memories/two`]);
+});
+
+test("forget accepts a resource name using the project NUMBER even though config uses the project ID", async () => {
+  // Vertex AI resource names returned by the API use the numeric project
+  // number, while MemoryBankConfig.projectId is commonly the human-readable
+  // project ID. Both refer to the same project/engine and must be accepted.
+  const deletedNames = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => [{ scope: { shared_scope: "team" } }],
+    deleteMemory: async (input) => { deletedNames.push(input.name); return [operation()]; },
+  }));
+  const numberFormName = `projects/999888777/locations/${config.location}/reasoningEngines/${config.reasoningEngineId}/memories/one`;
+  await service.forget(numberFormName);
+  assert.deepEqual(deletedNames, [numberFormName]);
+});
+
+test("forget rejects a resource name from the same project but a different reasoningEngineId", async () => {
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => [{ scope: { shared_scope: "team" } }],
+  }));
+  const otherEngineName = `projects/${config.projectId}/locations/${config.location}/reasoningEngines/different-engine/memories/one`;
+  await assert.rejects(() => service.forget(otherEngineName), /must be a bare memory ID or a full resource name/);
+});
+
+test("correct rejects a foreign-engine resource name without calling updateMemory", async () => {
+  const calls = [];
+  const service = new MemoryBankService(config, mockClient({
+    updateMemory: async () => { calls.push("updateMemory"); return [operation()]; },
+  }));
+  const foreignName = "projects/other-project/locations/us-central1/reasoningEngines/other-engine/memories/one";
+  await assert.rejects(() => service.correct(foreignName, "New fact"), /must be a bare memory ID or a full resource name/);
+  assert.deepEqual(calls, []);
+});
+
+test("correct rejects a same-engine, different-scope memory without calling updateMemory or deleteMemory", async () => {
+  const calls = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => { calls.push("getMemory"); return [{ scope: { shared_scope: "other-team" } }]; },
+    updateMemory: async () => { calls.push("updateMemory"); return [operation()]; },
+    deleteMemory: async () => { calls.push("deleteMemory"); return [operation()]; },
+  }));
+  await assert.rejects(() => service.correct("one", "New fact"), /Refusing to mutate: memory does not belong to the configured scope/);
+  assert.deepEqual(calls, ["getMemory"]);
+});
+
+test("correct succeeds via patch for a valid same-scope target", async () => {
+  const calls = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => { calls.push("getMemory"); return [{ scope: { shared_scope: "team" } }]; },
+    updateMemory: async (input) => { calls.push(["updateMemory", input.memory.name]); return [operation()]; },
+  }));
+  assert.deepEqual(await service.correct("one", "New fact"), { corrected: true, method: "patch" });
+  assert.deepEqual(calls, ["getMemory", ["updateMemory", `${parentName(config)}/memories/one`]]);
+});
+
+test("correct fallback still enforces the scope check before delete-regenerate", async () => {
+  // Scope check must run before the patch attempt so a foreign/wrong-scope
+  // memory can never reach the delete step, even via the fallback path.
+  const calls = [];
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => { calls.push("getMemory"); return [{ scope: { shared_scope: "other-team" } }]; },
+    updateMemory: async () => { calls.push("updateMemory"); throw Object.assign(new Error("unsupported"), { code: 12 }); },
+    deleteMemory: async () => { calls.push("deleteMemory"); return [operation()]; },
+  }));
+  await assert.rejects(() => service.correct("one", "New fact"), /Refusing to mutate: memory does not belong to the configured scope/);
+  assert.deepEqual(calls, ["getMemory"], "updateMemory/deleteMemory must never be reached");
 });
 
 test("validates JSON-RPC requests, arguments, and notification silence", async () => {
