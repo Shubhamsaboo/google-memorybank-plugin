@@ -1,6 +1,6 @@
 {
   "id": "openclaw-vertexai-memorybank",
-  "name": "Memory (Vertex AI Memory Bank)",
+  "name": "Memory (Agent Platform Memory Bank)",
   "kind": "general",
   "configSchema": {
     "type": "object",
@@ -8,7 +8,7 @@
     "properties": {
       "projectId": { "type": "string", "description": "GCP project ID or number" },
       "location": { "type": "string", "description": "GCP region (e.g. us-central1)" },
-      "reasoningEngineId": { "type": "string", "description": "Agent Engine reasoning engine ID" },
+      "reasoningEngineId": { "type": "string", "description": "Agent Platform reasoning engine ID (compatibility configuration name)" },
       "scope": { "type": "object", "description": "Memory scope for isolation (default: {agent_name: 'openclaw'})" },
       "autoRecall": { "type": "boolean", "description": "Retrieve and inject memories before each turn (default: true)" },
       "autoCapture": { "type": "boolean", "description": "Extract and store memories after each turn (default: true)" },
@@ -19,8 +19,8 @@
       "topK": { "type": "number", "description": "Max memories to retrieve per query (default: 10)" },
       "maxDistance": { "type": "number", "description": "Max similarity distance for recall. Lower = stricter (default: no filtering)" },
       "backgroundGenerate": { "type": "boolean", "description": "Fire-and-forget memory generation (default: true)" },
-      "ttlSeconds": { "type": "number", "description": "Auto-expire memories after this many seconds (default: no expiry)" },
-      "introspection": { "type": "string", "enum": ["off", "scores"], "description": "Metadata in auto-recalled memories: 'off' = just facts, 'scores' = facts + similarity score (default: scores)" }
+      "ttlSeconds": { "type": "number", "description": "Plugin TTL setting (seconds), mapped to generated-memory TTL configuration only; direct CreateMemory remembers are unaffected; default: no expiry" },
+      "introspection": { "type": "string", "enum": ["off", "scores"], "description": "Plugin presentation setting for metadata in auto-recalled memories: 'off' = just facts, 'scores' = facts + similarity score (default: scores)" }
     }
   }
 }
