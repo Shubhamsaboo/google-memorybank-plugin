@@ -2,7 +2,7 @@
 
 Managed long-term memory for OpenClaw and [Hermes Agent](https://github.com/NousResearch/hermes-agent), powered by [Agent Platform Memory Bank on Google Cloud](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/memory-bank).
 
-> **Compatibility identifier:** The repository, npm package, and OpenClaw plugin retain `openclaw-vertexai-memorybank` for compatibility. It is not the visible project name.
+> **Compatibility identifier:** The npm package and OpenClaw plugin retain `openclaw-vertexai-memorybank` for compatibility. It is not the visible project name.
 
 ### Why memory beyond an agent runtime's core memory
 
@@ -87,8 +87,8 @@ Add configuration before installing the plugin so it can validate the required f
 ### 2. Clone, build, and install
 
 ```bash
-git clone https://github.com/Shubhamsaboo/openclaw-vertexai-memorybank.git
-cd openclaw-vertexai-memorybank
+git clone https://github.com/Shubhamsaboo/google-memorybank-plugin.git
+cd google-memorybank-plugin
 npm ci && npm run build
 openclaw plugins install .
 ```
@@ -123,8 +123,8 @@ The package provides a dedicated MCP JSON-RPC-over-stdio server for Hermes. MCP 
 ### 1. Clone and build
 
 ```bash
-git clone https://github.com/Shubhamsaboo/openclaw-vertexai-memorybank.git
-cd openclaw-vertexai-memorybank
+git clone https://github.com/Shubhamsaboo/google-memorybank-plugin.git
+cd google-memorybank-plugin
 npm ci && npm run build
 ```
 
@@ -136,7 +136,7 @@ Add an entry to `~/.hermes/config.yaml`, replacing the placeholder with the abso
 mcp_servers:
   agent_platform_memorybank:
     command: "node"
-    args: ["/absolute/path/openclaw-vertexai-memorybank/bin/hermes-mcp.js"]
+    args: ["/absolute/path/google-memorybank-plugin/bin/hermes-mcp.js"]
     env:
       MEMORYBANK_PROJECT_ID: "your-gcp-project-id"
       MEMORYBANK_LOCATION: "us-central1"
@@ -311,6 +311,31 @@ The actual OpenClaw CLI commands are distinct from agent tools:
 | `memorybank-forget <memoryId>` | deletes a memory; IDs come from search/list `--show-ids` |
 
 The count cache is in-memory for five minutes and is adjusted after direct create/delete operations; count-only/status can force a fresh paginated count. `GetMemory` fetches one named memory, `RetrieveMemories` is for all-in-scope or similarity retrieval, and `ListMemories` enumerates memories with pagination.
+
+## Mutation isolation and error handling
+
+OpenClaw and Hermes share the same search, list, stats, direct remember, forget,
+and correction operations. Their lifecycle hooks and response presentation remain
+specific to each runtime.
+
+Forget and correct accept a bare memory ID, a resource name using the configured
+project spelling, or the canonical project-number name returned by Vertex. The
+server reads the target through the **configured project, region, and engine**,
+verifies any project alias against that response, and checks the complete scope
+before mutating. All mutations also use the configured parent. Failed lookups,
+unverified aliases, and scope mismatches leave the memory untouched. This requires
+permission to read the target memory as well as update/delete it; no Resource
+Manager permission is added just to resolve project aliases.
+
+Correction reuses the verified original fact for recovery. If a fallback is
+needed but that fact is unavailable, it refuses to delete. Restoration after
+regeneration failure is best effort and can create a new memory ID; it is not an
+atomic rollback of all metadata or concurrent changes.
+
+SDK initialization is awaited before dispatching shared operations so credential
+failures return tool errors. The MCP server does not swallow unrelated unhandled
+rejections. The subprocess tests wait for protocol responses, with a 15-second
+failure deadline to accommodate cold SDK startup.
 
 ## Troubleshooting and security
 

@@ -66,11 +66,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Shubhamsaboo/openclaw-vertexai-memorybank.git"
+    "url": "git+https://github.com/Shubhamsaboo/google-memorybank-plugin.git"
   },
-  "homepage": "https://github.com/Shubhamsaboo/openclaw-vertexai-memorybank#readme",
+  "homepage": "https://github.com/Shubhamsaboo/google-memorybank-plugin#readme",
   "bugs": {
-    "url": "https://github.com/Shubhamsaboo/openclaw-vertexai-memorybank/issues"
+    "url": "https://github.com/Shubhamsaboo/google-memorybank-plugin/issues"
   },
   "license": "MIT"
 }

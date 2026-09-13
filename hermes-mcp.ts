@@ -93,22 +93,6 @@ function negotiateProtocolVersion(value: unknown): string {
     : LATEST_PROTOCOL_VERSION;
 }
 
-let unhandledRejectionHandlerInstalled = false;
-
-function installUnhandledRejectionHandler(): void {
-  if (unhandledRejectionHandlerInstalled) return;
-  unhandledRejectionHandlerInstalled = true;
-  // google-gax can surface credential/metadata failures on a detached promise
-  // after an RPC has already returned. Keep that SDK failure from terminating
-  // this long-lived stdio server, but do not install an uncaughtException
-  // handler: synchronous programmer errors must still terminate normally.
-  process.on("unhandledRejection", (reason) => {
-    const type = reason instanceof Error ? reason.name : typeof reason;
-    const message = reason instanceof Error ? reason.message : String(reason);
-    process.stderr.write(`[memorybank] handled asynchronous dependency rejection (${type}): ${message}; MCP server remains available.\n`);
-  });
-}
-
 export function createMcpRequestHandler(service: Pick<MemoryBankService, "search" | "remember" | "forget" | "correct" | "stats">) {
   const tools: Record<string, ToolHandler> = {
     async memorybank_search(args) {
@@ -186,7 +170,6 @@ export function createMcpRequestHandler(service: Pick<MemoryBankService, "search
 }
 
 export function runMcpServer(): void {
-  installUnhandledRejectionHandler();
   let handler: ReturnType<typeof createMcpRequestHandler>;
   try {
     // Hermes intentionally has a separate default scope. Set MEMORYBANK_SCOPE to

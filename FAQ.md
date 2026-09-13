@@ -70,7 +70,7 @@ They are not official Memory Bank request-field names.
 
 ## Why are some old-looking identifiers still present?
 
-The package/repository/OpenClaw-plugin ID `openclaw-vertexai-memorybank`, `@google-cloud/aiplatform`, `google-cloud-aiplatform`, `import vertexai`, `v1beta1`, `aiplatform.googleapis.com`, `reasoningEngines`, `reasoningEngineId`, and `MEMORYBANK_REASONING_ENGINE_ID` are required compatibility identifiers in the present implementation and API examples. They do not describe the current product brand.
+The package/OpenClaw-plugin ID `openclaw-vertexai-memorybank`, `@google-cloud/aiplatform`, `google-cloud-aiplatform`, `import vertexai`, `v1beta1`, `aiplatform.googleapis.com`, `reasoningEngines`, `reasoningEngineId`, and `MEMORYBANK_REASONING_ENGINE_ID` are required compatibility identifiers in the present implementation and API examples. They do not describe the current product brand.
 
 ## How do I use the Hermes MCP server?
 
@@ -80,7 +80,7 @@ The Hermes MCP executable is `agent-platform-memorybank-hermes` when the package
 mcp_servers:
   agent_platform_memorybank:
     command: "node"
-    args: ["/absolute/path/openclaw-vertexai-memorybank/bin/hermes-mcp.js"]
+    args: ["/absolute/path/google-memorybank-plugin/bin/hermes-mcp.js"]
     env:
       MEMORYBANK_PROJECT_ID: "${MEMORYBANK_PROJECT_ID}"
       MEMORYBANK_LOCATION: "${MEMORYBANK_LOCATION}"

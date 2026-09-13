@@ -10,6 +10,7 @@ export interface MemoryBankConfig {
 }
 
 export interface MemoryBankClient {
+  initialize?(): Promise<unknown>;
   retrieveMemories(request: unknown): Promise<[any]>;
   createMemory(request: unknown): Promise<[any]>;
   deleteMemory(request: unknown): Promise<[any]>;
@@ -60,53 +61,45 @@ function scopeFilter(scope: Record<string, string>): string {
   return `scope="${JSON.stringify(scope).replace(/"/g, '\\"')}"`;
 }
 
-export function memoryName(cfg: MemoryBankConfig, id: string): string {
-  if (!id.includes("/")) return `${parentName(cfg)}/memories/${id}`;
-  // Match structurally on location + reasoningEngineId rather than a literal
-  // string-prefix match against parentName(cfg): Vertex AI resource names
-  // returned by the API use the numeric project number (e.g. "84719228704"),
-  // while MemoryBankConfig.projectId is commonly the human-readable project
-  // ID (e.g. "alanblount-sandbox") -- both refer to the same project, so a
-  // literal prefix match spuriously rejects legitimate same-engine targets.
-  // reasoningEngineId is an independently-assigned, effectively-unique
-  // identifier, so matching on {location, reasoningEngineId} still fully
-  // rejects resource names from a foreign reasoning engine/project.
-  const match = /^projects\/[^/]+\/locations\/([^/]+)\/reasoningEngines\/([^/]+)\/memories\/([^/]+)$/.exec(id);
-  if (!match || match[1] !== cfg.location || match[2] !== cfg.reasoningEngineId) {
-    throw new Error(
-      `Invalid memory_id: must be a bare memory ID or a full resource name under the configured reasoning engine (.../locations/${cfg.location}/reasoningEngines/${cfg.reasoningEngineId}/memories/<id>).`,
-    );
+function memoryParts(cfg: MemoryBankConfig, id: string): { project: string; id: string } {
+  const validId = (value: string) => /^[A-Za-z0-9_-]+$/.test(value);
+  if (validId(id)) return { project: cfg.projectId, id };
+  const match = /^projects\/([^/]+)\/locations\/([^/]+)\/reasoningEngines\/([^/]+)\/memories\/([^/]+)$/.exec(id);
+  if (!match || match[2] !== cfg.location || match[3] !== cfg.reasoningEngineId || !validId(match[4])) {
+    throw new Error("Invalid memory_id: must be a bare memory ID or a full resource name under the configured reasoning engine.");
   }
-  return id;
+  return { project: match[1], id: match[4] };
 }
 
-/**
- * Fail-closed scope guard for mutating operations (forget / correct).
- *
- * memoryName() only proves the resource name belongs to the configured
- * project/location/reasoningEngine -- it says nothing about which scope the
- * memory was written under. A single reasoning engine can hold memories for
- * many scopes (different users, different agents), and ADC credentials are
- * typically broad enough to read/write any of them. Without this check, a
- * caller could forget/correct a same-engine memory belonging to a different
- * scope than the one this server is configured for.
- *
- * This fetches the live memory and requires its scope to match the
- * configured scope exactly (same keys, same values) before allowing any
- * mutation. On any mismatch, missing scope, or fetch failure, throws and
- * performs no mutation -- callers must not catch this and continue.
- */
-async function assertOwnedByConfiguredScope(client: MemoryBankClient, name: string, expectedScope: Record<string, string>): Promise<void> {
-  let actualScope: Record<string, string> | undefined;
+/** A different project spelling needs the canonical name returned by a trusted lookup. */
+export function memoryName(cfg: MemoryBankConfig, id: string, canonicalName?: string): string {
+  const target = memoryParts(cfg, id);
+  if (target.project !== cfg.projectId && id !== canonicalName) {
+    throw new Error("Refusing to mutate: memory project does not match the configured project or its verified alias.");
+  }
+  // Always route through configuration, never through a caller-supplied project.
+  return `${parentName(cfg)}/memories/${target.id}`;
+}
+
+/** Resolve project aliases and scope through the configured project only. */
+async function assertOwnedByConfiguredScope(client: MemoryBankClient, cfg: MemoryBankConfig, id: string, expectedScope: Record<string, string>): Promise<{ name: string; memory: any }> {
+  const target = memoryParts(cfg, id); // Reject malformed / foreign-engine names before lookup.
+  const name = `${parentName(cfg)}/memories/${target.id}`;
+  let memory: any;
   try {
-    const [memory] = await client.getMemory({ name });
-    actualScope = (memory as any)?.scope;
+    await client.initialize?.();
+    [memory] = await client.getMemory({ name });
   } catch (error: any) {
     throw new Error(`Cannot verify memory scope before mutating (lookup failed): ${error?.message || "unknown error"}.`);
   }
-  if (!actualScope || !scopesEqual(actualScope, expectedScope)) {
+  // Vertex may return a project number when configuration uses a project ID.
+  // The response to our configured-project lookup proves the alias; comparing
+  // only location + engine ID would silently discard the project boundary.
+  memoryName(cfg, id, memory?.name);
+  if (!memory?.scope || !scopesEqual(memory.scope, expectedScope)) {
     throw new Error("Refusing to mutate: memory does not belong to the configured scope.");
   }
+  return { name, memory };
 }
 
 function scopesEqual(a: Record<string, string>, b: Record<string, string>): boolean {
@@ -141,7 +134,10 @@ export class MemoryBankService {
     private readonly fallbackScope: Record<string, string> = { agent_name: "openclaw" },
   ) {}
 
-  public async search(query: string, topK?: number): Promise<Record<string, unknown>[]> {
+  public async retrieve(query: string, topK?: number): Promise<any[]> {
+    // Await SDK initialization ourselves: generated RPC methods otherwise call
+    // initialize().catch(err => { throw err; }) on a detached promise.
+    await this.client.initialize?.();
     const [response] = await this.client.retrieveMemories({
       parent: parentName(this.cfg),
       scope: effectiveScope(this.cfg, this.fallbackScope),
@@ -151,10 +147,15 @@ export class MemoryBankService {
     if (this.cfg.maxDistance != null) {
       memories = memories.filter((memory: any) => memory.distance != null && memory.distance <= this.cfg.maxDistance!);
     }
-    return memories.map((memory: any, index: number) => formatMemory(memory, index + 1));
+    return memories;
+  }
+
+  public async search(query: string, topK?: number): Promise<Record<string, unknown>[]> {
+    return (await this.retrieve(query, topK)).map((memory: any, index: number) => formatMemory(memory, index + 1));
   }
 
   public async remember(fact: string): Promise<void> {
+    await this.client.initialize?.();
     const [operation] = await this.client.createMemory({
       parent: parentName(this.cfg),
       memory: { fact, scope: effectiveScope(this.cfg, this.fallbackScope) },
@@ -163,16 +164,14 @@ export class MemoryBankService {
   }
 
   public async forget(id: string): Promise<void> {
-    const name = memoryName(this.cfg, id);
-    await assertOwnedByConfiguredScope(this.client, name, effectiveScope(this.cfg, this.fallbackScope));
+    const { name } = await assertOwnedByConfiguredScope(this.client, this.cfg, id, effectiveScope(this.cfg, this.fallbackScope));
     const [operation] = await this.client.deleteMemory({ name });
     await waitForOperation(operation);
   }
 
   public async correct(id: string, newFact: string): Promise<CorrectionResult> {
-    const name = memoryName(this.cfg, id);
     const expectedScope = effectiveScope(this.cfg, this.fallbackScope);
-    await assertOwnedByConfiguredScope(this.client, name, expectedScope);
+    const { name, memory: oldMemory } = await assertOwnedByConfiguredScope(this.client, this.cfg, id, expectedScope);
     try {
       const [operation] = await this.client.updateMemory({
         memory: { name, fact: newFact },
@@ -185,17 +184,9 @@ export class MemoryBankService {
       if (![3, 12, 400, 405].includes(code)) throw error;
     }
 
-    // Preserve the old fact before destructive fallback. A failed regeneration
-    // can then restore the prior memory instead of silently losing it.
-    // Scope was already verified above, before any mutation occurred; this
-    // fallback only deletes/regenerates the same already-verified `name`.
-    let oldFact: string | undefined;
-    try {
-      const [oldMemory] = await this.client.getMemory({ name });
-      if (typeof oldMemory?.fact === "string" && oldMemory.fact) oldFact = oldMemory.fact;
-    } catch {
-      // Best effort only: delete failures still leave the original untouched.
-    }
+    // Reuse the verified snapshot; a second failed GET must not erase recovery data.
+    const oldFact = typeof oldMemory.fact === "string" ? oldMemory.fact : undefined;
+    if (!oldFact) throw new Error("Cannot safely replace memory: original fact is unavailable.");
 
     const [deleteOperation] = await this.client.deleteMemory({ name });
     await waitForOperation(deleteOperation);
@@ -241,7 +232,8 @@ export class MemoryBankService {
     }
   }
 
-  public async stats(): Promise<{ totalMemories: number; byTopic: Record<string, number>; scope: Record<string, string> }> {
+  public async list(): Promise<any[]> {
+    await this.client.initialize?.();
     const scope = effectiveScope(this.cfg, this.fallbackScope);
     const all: any[] = [];
     let pageToken: string | undefined;
@@ -260,6 +252,12 @@ export class MemoryBankService {
       pageToken = response?.nextPageToken || undefined;
     } while (pageToken);
 
+    return all;
+  }
+
+  public async stats(): Promise<{ totalMemories: number; byTopic: Record<string, number>; scope: Record<string, string> }> {
+    const all = await this.list();
+    const scope = effectiveScope(this.cfg, this.fallbackScope);
     const byTopic: Record<string, number> = {};
     for (const memory of all) {
       const topics = memory.topics || [];

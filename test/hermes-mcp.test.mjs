@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { createInterface } from "node:readline";
+import plugin from "../dist/index.js";
 import { spawn } from "node:child_process";
 import { createMcpRequestHandler, TOOL_DEFINITIONS } from "../dist/hermes-mcp.js";
 import { getMemoryBankClient, hermesConfigFromEnv, MemoryBankService, parentName, resetMemoryBankClientsForTests, setMemoryBankClientFactoryForTests } from "../dist/memorybank-core.js";
 
 const operation = (value = {}) => ({ promise: async () => [value] });
 const config = { projectId: "project", location: "us-central1", reasoningEngineId: "engine", scope: { shared_scope: "team" } };
+const SUBPROCESS_TIMEOUT_MS = 15000;
 const validEnv = {
   MEMORYBANK_PROJECT_ID: "project",
   MEMORYBANK_LOCATION: "us-central1",
@@ -124,7 +127,8 @@ test("stats paginates and search applies configured distance filtering", async (
       { memory: { name: "memories/keep", fact: "keep" }, distance: 0.2 },
       { memory: { name: "memories/drop", fact: "drop" }, distance: 0.3 },
     ] }],
-    listMemories: async (input) => {
+    listMemories: async (input, options) => {
+      assert.equal(options.autoPaginate, false);
       pages.push(input.pageToken);
       return input.pageToken ? [[{ topics: [{ customMemoryTopicLabel: "two" }] }], undefined, {}] : [[{ topics: [{ customMemoryTopicLabel: "one" }] }], undefined, { nextPageToken: "next" }];
     },
@@ -183,18 +187,89 @@ test("forget succeeds for a bare ID or full same-engine, same-scope resource nam
   assert.deepEqual(deletedNames, [`${parentName(config)}/memories/one`, `${parentName(config)}/memories/two`]);
 });
 
-test("forget accepts a resource name using the project NUMBER even though config uses the project ID", async () => {
-  // Vertex AI resource names returned by the API use the numeric project
-  // number, while MemoryBankConfig.projectId is commonly the human-readable
-  // project ID. Both refer to the same project/engine and must be accepted.
-  const deletedNames = [];
+test("forget and correct accept only the project-number alias returned by the configured-project lookup", async () => {
+  const numberName = `projects/999888777/locations/${config.location}/reasoningEngines/${config.reasoningEngineId}/memories/one`;
+  const configuredName = `${parentName(config)}/memories/one`;
+  const calls = [];
   const service = new MemoryBankService(config, mockClient({
-    getMemory: async () => [{ scope: { shared_scope: "team" } }],
-    deleteMemory: async (input) => { deletedNames.push(input.name); return [operation()]; },
+    getMemory: async (input) => {
+      assert.equal(input.name, configuredName);
+      return [{ name: numberName, fact: "Old fact", scope: config.scope }];
+    },
+    deleteMemory: async (input) => { calls.push(input.name); return [operation()]; },
+    updateMemory: async (input) => { calls.push(input.memory.name); return [operation()]; },
   }));
-  const numberFormName = `projects/999888777/locations/${config.location}/reasoningEngines/${config.reasoningEngineId}/memories/one`;
-  await service.forget(numberFormName);
-  assert.deepEqual(deletedNames, [numberFormName]);
+  await service.forget(numberName);
+  await service.correct(numberName, "New fact");
+  assert.deepEqual(calls, [configuredName, configuredName]);
+});
+
+for (const tool of ["forget", "correct"]) {
+  test(`${tool} rejects another project with identical engine, region, scope and memory ID`, async () => {
+    const calls = [];
+    const service = new MemoryBankService(config, mockClient({
+      getMemory: async (input) => { calls.push(input.name); return [{ name: `projects/999888777/locations/${config.location}/reasoningEngines/engine/memories/one`, scope: config.scope }]; },
+      deleteMemory: async () => { assert.fail("must not delete"); },
+      updateMemory: async () => { assert.fail("must not update"); },
+    }));
+    for (const project of ["unrelated-project", "111222333"]) {
+      await assert.rejects(() => service[tool](`projects/${project}/locations/${config.location}/reasoningEngines/engine/memories/one`, "new"), /memory project does not match/);
+    }
+    assert.deepEqual(calls, [`${parentName(config)}/memories/one`, `${parentName(config)}/memories/one`]);
+  });
+
+  test(`${tool} rejects an unverified alias when lookup has no canonical name`, async () => {
+    const service = new MemoryBankService(config, mockClient({
+      deleteMemory: async () => assert.fail("must not delete"),
+      updateMemory: async () => assert.fail("must not update"),
+    }));
+    await assert.rejects(() => service[tool](`projects/999888777/locations/${config.location}/reasoningEngines/engine/memories/one`, "new"), /memory project does not match/);
+  });
+}
+
+test("malformed memory IDs are rejected before lookup", async () => {
+  const service = new MemoryBankService(config, mockClient({ getMemory: async () => assert.fail("must not fetch") }));
+  for (const id of ["", ".", "..", "one?query", "%2e%2e", "one/../two", `${parentName(config)}/memories/one/extra`, `${parentName(config)}/memories/..`]) {
+    await assert.rejects(() => service.forget(id), /Invalid memory_id/);
+  }
+});
+
+test("scope equality requires every key and value but ignores key order", async () => {
+  const cfg = { ...config, scope: { user_id: "alice", agent_name: "hermes" } };
+  let actual = { agent_name: "hermes", user_id: "alice" };
+  let deletes = 0;
+  const service = new MemoryBankService(cfg, mockClient({
+    getMemory: async () => [{ scope: actual }],
+    deleteMemory: async () => { deletes++; return [operation()]; },
+  }));
+  await service.forget("one");
+  for (const scope of [{ user_id: "alice" }, { user_id: "alice", agent_name: "hermes", extra: "x" }, { user_id: "bob", agent_name: "hermes" }]) {
+    actual = scope;
+    await assert.rejects(() => service.forget("one"), /configured scope/);
+  }
+  assert.equal(deletes, 1);
+});
+
+test("correction uses the verified fact for recovery without a second lookup", async () => {
+  let reads = 0;
+  let restored;
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => { assert.equal(++reads, 1); return [{ fact: "Original", scope: config.scope }]; },
+    updateMemory: async () => { throw Object.assign(new Error("unsupported"), { code: 12 }); },
+    generateMemories: async () => { throw new Error("generation failed"); },
+    createMemory: async (input) => { restored = input.memory; return [operation()]; },
+  }));
+  assert.equal((await service.correct("one", "New")).recovered, true);
+  assert.deepEqual(restored, { fact: "Original", scope: config.scope });
+});
+
+test("correction never deletes when the original fact is unavailable", async () => {
+  const service = new MemoryBankService(config, mockClient({
+    getMemory: async () => [{ scope: config.scope }],
+    updateMemory: async () => { throw Object.assign(new Error("unsupported"), { code: 12 }); },
+    deleteMemory: async () => assert.fail("must not delete"),
+  }));
+  await assert.rejects(() => service.correct("one", "New"), /original fact is unavailable/);
 });
 
 test("forget rejects a resource name from the same project but a different reasoningEngineId", async () => {
@@ -296,7 +371,7 @@ test("validates Hermes environment configuration", () => {
 
 async function runStdio(lines, { cwd = process.cwd(), env = validEnv } = {}) {
   const child = spawn(process.execPath, [resolve(process.cwd(), "bin/hermes-mcp.js")], {
-    cwd, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"],
+    cwd, env: { ...validEnv, ...env }, stdio: ["pipe", "pipe", "pipe"],
   });
   let stdout = "";
   let stderr = "";
@@ -306,7 +381,7 @@ async function runStdio(lines, { cwd = process.cwd(), env = validEnv } = {}) {
   child.stderr.on("data", (data) => { stderr += data; });
   child.stdin.end(lines);
   await new Promise((resolvePromise, reject) => {
-    const timer = setTimeout(() => { child.kill(); reject(new Error("MCP process timed out")); }, 5000);
+    const timer = setTimeout(() => { child.kill(); reject(new Error("MCP process timed out")); }, SUBPROCESS_TIMEOUT_MS);
     child.once("exit", (code) => { clearTimeout(timer); code === 0 ? resolvePromise() : reject(Object.assign(new Error(`MCP process exited ${code}`), { stdout, stderr, code })); });
   });
   return { stdout, stderr };
@@ -335,39 +410,69 @@ test("stdio server ignores blank lines, handles malformed JSON, notifications, a
   }
 });
 
-test("out-of-band dependency rejection does not terminate the MCP process", async () => {
-  const entryPoint = resolve(process.cwd(), "dist/hermes-mcp.js");
-  const child = spawn(process.execPath, ["--input-type=module", "--eval", `
-    import { runMcpServer } from ${JSON.stringify(entryPoint)};
-    runMcpServer();
-    setTimeout(() => Promise.reject(new Error("simulated google-gax credential rejection")), 40);
-    // Test harness exit only; production MCP lifecycle remains stdin-driven.
-    setTimeout(() => process.exit(0), 300);
-  `], { cwd: process.cwd(), env: { ...process.env, ...validEnv }, stdio: ["pipe", "pipe", "pipe"] });
-  let stdout = "";
+function startStdio(t, { env = {}, evalCode } = {}) {
+  const args = evalCode ? ["--input-type=module", "--eval", evalCode] : [resolve("bin/hermes-mcp.js")];
+  // Deliberately exclude ambient ADC and user credentials from subprocess tests.
+  const child = spawn(process.execPath, args, { env: { ...validEnv, ...env }, stdio: ["pipe", "pipe", "pipe"] });
+  const pending = new Map();
+  const lines = createInterface({ input: child.stdout });
   let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (data) => { stdout += data; });
-  child.stderr.on("data", (data) => { stderr += data; });
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25" } })}\n`);
-  await new Promise((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error("initialize timed out")), 3000);
-    const poll = () => stdout.includes('"id":1') ? (clearTimeout(timer), resolvePromise()) : setTimeout(poll, 10);
-    poll();
+  child.stderr.on("data", data => { stderr += data; });
+  const closed = new Promise((resolveExit, reject) => {
+    child.once("error", reject);
+    child.once("close", code => {
+      for (const waiter of pending.values()) waiter.reject(new Error(`MCP exited ${code}: ${stderr}`));
+      resolveExit(code);
+    });
   });
-  await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
-  await new Promise((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error("tools/list timed out")), 3000);
-    const poll = () => stdout.includes('"id":2') ? (clearTimeout(timer), resolvePromise()) : setTimeout(poll, 10);
-    poll();
+  lines.on("line", line => {
+    const response = JSON.parse(line);
+    pending.get(response.id)?.resolve(response);
   });
-  child.stdin.end();
-  const code = await new Promise((resolvePromise) => child.once("exit", resolvePromise));
-  assert.equal(code, 0);
-  assert.match(stderr, /handled asynchronous dependency rejection/);
-  assert.equal(JSON.parse(stdout.trim().split("\n").at(-1)).result.tools.length, 5);
+  t.after(() => { child.kill(); lines.close(); });
+  let nextId = 0;
+  return {
+    child, closed, stderr: () => stderr,
+    async call(method, params = {}) {
+      const id = ++nextId;
+      let timer;
+      try {
+        return await new Promise((resolveResponse, reject) => {
+          timer = setTimeout(() => { child.kill(); reject(new Error("MCP response timed out")); }, SUBPROCESS_TIMEOUT_MS);
+          pending.set(id, { resolve: resolveResponse, reject });
+          child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+        });
+      } finally { clearTimeout(timer); pending.delete(id); }
+    },
+  };
+}
+
+test("broken credentials return stats/search errors and leave the same process usable", async t => {
+  const dir = await mkdtemp(resolve(tmpdir(), "memorybank-no-creds-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const proc = startStdio(t, { env: { GOOGLE_APPLICATION_CREDENTIALS: resolve(dir, "missing.json") } });
+  await proc.call("initialize", { protocolVersion: "2025-11-25" });
+  for (const name of ["memorybank_stats", "memorybank_search"]) {
+    const response = await proc.call("tools/call", { name, arguments: name === "memorybank_search" ? { query: "test" } : {} });
+    assert.equal(response.result.isError, true);
+    assert.match(response.result.content[0].text, /ENOENT|does not exist/);
+    assert.equal((await proc.call("tools/list")).result.tools.length, 5);
+  }
+  assert.doesNotMatch(proc.stderr(), /AutopaginateTrueWarning/);
+});
+
+test("unexpected unhandled rejections terminate instead of being swallowed", async t => {
+  const entry = new URL("../dist/hermes-mcp.js", import.meta.url).href;
+  const proc = startStdio(t, { evalCode: `
+    import { runMcpServer } from ${JSON.stringify(entry)};
+    runMcpServer();
+    process.stdin.once("data", () => Promise.reject(new Error("unexpected programmer failure")));
+  ` });
+  proc.child.stdin.end("\n");
+  const timer = setTimeout(() => proc.child.kill(), SUBPROCESS_TIMEOUT_MS);
+  t.after(() => clearTimeout(timer));
+  assert.equal(await proc.closed, 1);
+  assert.match(proc.stderr(), /unexpected programmer failure/);
 });
 
 test("stdio entry reports missing configuration only on stderr", async () => {
@@ -382,4 +487,54 @@ test("stdio entry reports missing configuration only on stderr", async () => {
   assert.equal(code, 1);
   assert.equal(stdout, "");
   assert.match(stderr, /Missing required environment variable MEMORYBANK_PROJECT_ID/);
+});
+
+
+test("OpenClaw tools use the shared ownership, correction recovery and pagination behavior", async () => {
+  const tools = new Map();
+  let mutations = 0;
+  let scope = { shared_scope: "wrong" };
+  const pages = [];
+  setMemoryBankClientFactoryForTests(() => mockClient({
+    getMemory: async () => [{ fact: "Original", scope }],
+    deleteMemory: async () => { mutations++; return [operation()]; },
+    updateMemory: async () => { throw Object.assign(new Error("unsupported"), { code: 12 }); },
+    generateMemories: async () => { throw new Error("generation failed"); },
+    createMemory: async (input) => { assert.equal(input.memory.fact, "Original"); mutations++; return [operation()]; },
+    listMemories: async (input, options) => {
+      assert.equal(options.autoPaginate, false);
+      pages.push(input.pageToken);
+      return input.pageToken ? [[{ fact: "two" }], undefined, {}] : [[{ fact: "one" }], undefined, { nextPageToken: "next" }];
+    },
+  }));
+  try {
+    plugin.register({
+      pluginConfig: { ...config, autoRecall: false, autoCapture: false, autoSyncFiles: false, autoSyncTopics: false },
+      registerTool: tool => tools.set(tool.name, tool), registerCli() {}, registerService() {}, on() {},
+    });
+    const forgotten = await tools.get("memorybank_forget").execute("test", { memory_id: "one" });
+    assert.equal(forgotten.details.deleted, false);
+    const rejected = await tools.get("memorybank_correct").execute("test", { memory_id: "one", new_fact: "New" });
+    assert.equal(rejected.details.corrected, false);
+    assert.equal(mutations, 0);
+    scope = config.scope;
+    const recovered = await tools.get("memorybank_correct").execute("test", { memory_id: "one", new_fact: "New" });
+    assert.equal(recovered.details.recovered, true);
+    assert.equal(recovered.isError, true);
+    assert.equal(mutations, 2);
+    const stats = await tools.get("memorybank_stats").execute("test", {});
+    assert.equal(JSON.parse(stats.content[0].text).totalMemories, 2);
+    assert.deepEqual(pages, [undefined, "next"]);
+  } finally { setMemoryBankClientFactoryForTests(); }
+});
+
+test("initialization failure is handled before every shared operation dispatches an RPC", async () => {
+  const client = mockClient({ initialize: async () => { throw new Error("credential initialization failed"); } });
+  for (const method of ["retrieveMemories", "createMemory", "getMemory", "deleteMemory", "updateMemory", "listMemories"]) {
+    client[method] = async () => assert.fail(`must not dispatch ${method}`);
+  }
+  const service = new MemoryBankService(config, client);
+  for (const [method, args] of [["search", ["q"]], ["remember", ["fact"]], ["forget", ["one"]], ["correct", ["one", "fact"]], ["stats", []]]) {
+    await assert.rejects(() => service[method](...args), /credential initialization failed/);
+  }
 });
