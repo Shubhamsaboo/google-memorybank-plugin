@@ -1,0 +1,13 @@
+name: vertex-memory
+version: 1.0.0
+description: "Cross-session memory backed by Google Cloud Vertex AI Memory Bank (Agent Engine). Managed, server-side fact extraction, dedup, and contradiction resolution."
+author: Shubhamsaboo, zeroasterisk
+kind: exclusive
+python_dependencies:
+  - "google-auth>=2.20,<3"
+  - "requests>=2.31,<3"
+hooks:
+  - prefetch
+  - queue_prefetch
+  - sync_turn
+  - on_memory_write

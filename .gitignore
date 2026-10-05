@@ -2,3 +2,8 @@ node_modules/
 dist/
 .memorybank-sync.json
 .memorybank-capture.json
+
+# Python (hermes/vertex-memory)
+__pycache__/
+*.pyc
+.pytest_cache/
