@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="diagram-title diagram-desc">
+      <title id="diagram-title">OpenClaw, Hermes, and Agent Platform Memory Bank architecture</title>
+      <desc id="diagram-desc">OpenClaw connects through a native plugin with automatic recall, capture, file sync, CLI and agent tools. Hermes connects through user-invoked MCP tools over standard input and output, without automatic hooks. Matching explicit scopes let both runtimes share Agent Platform Memory Bank operations.</desc>
+      <defs>
+<style><![CDATA[
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#070b18}body{display:grid;place-items:center;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.frame{width:min(100vw,1600px);aspect-ratio:8/5}.frame svg{display:block;width:100%;height:100%}.title{font-size:38px;font-weight:720;letter-spacing:-.7px;fill:#f5f8ff}.subtitle{font-size:15px;font-weight:520;letter-spacing:1.7px;fill:#8493ad}.panel-title{font-size:25px;font-weight:700;fill:#f8faff}.panel-kicker{font-size:12px;font-weight:750;letter-spacing:1.5px}.card-title{font-size:16px;font-weight:700;fill:#edf2ff}.body{font-size:13px;font-weight:500;fill:#aebbd0}.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;font-size:12px;font-weight:600}.small{font-size:11px;font-weight:650;letter-spacing:.8px}.line{fill:none;stroke-linecap:round;stroke-linejoin:round}.node{filter:url(#shadow)}
+  ]]></style>
+        <radialGradient id="bg" cx="50%" cy="23%" r="95%"><stop offset="0" stop-color="#121b35"/><stop offset=".55" stop-color="#0b1124"/><stop offset="1" stop-color="#060a15"/></radialGradient>
+        <linearGradient id="coralPanel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2b1722"/><stop offset="1" stop-color="#121328"/></linearGradient>
+        <linearGradient id="bluePanel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101d36"/><stop offset="1" stop-color="#111329"/></linearGradient>
+        <linearGradient id="corePanel" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#10233b"/><stop offset=".5" stop-color="#102b43"/><stop offset="1" stop-color="#10233b"/></linearGradient>
+        <linearGradient id="agentPlatformPanel" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#173b68"/><stop offset=".5" stop-color="#1b5da1"/><stop offset="1" stop-color="#173b68"/></linearGradient>
+        <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M44 0H0V44" fill="none" stroke="#6f83a8" stroke-opacity=".045" stroke-width="1"/></pattern>
+        <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity=".38"/></filter>
+        <filter id="coralGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="blueGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <marker id="arrowCoral" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M1 1l10 5-10 5z" fill="#ff766e"/></marker>
+        <marker id="arrowBlue" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M1 1l10 5-10 5z" fill="#55c7ff"/></marker>
+        <marker id="arrowCore" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M1 1l10 5-10 5z" fill="#72d8ee"/></marker>
+      </defs>
+
+      <rect width="1600" height="1000" fill="url(#bg)"/>
+      <rect width="1600" height="1000" fill="url(#grid)"/>
+      <circle cx="208" cy="398" r="260" fill="#ff625d" opacity=".035"/>
+      <circle cx="1390" cy="390" r="280" fill="#48b8ff" opacity=".045"/>
+
+      <g data-component-id="diagram-heading">
+        <text x="800" y="58" text-anchor="middle" class="title">One memory layer. Two deliberate integrations.</text>
+        <text x="800" y="88" text-anchor="middle" class="subtitle">OPENCLAW + HERMES AGENT · AGENT PLATFORM MEMORY BANK</text>
+      </g>
+
+      <g data-component-id="openclaw-native-plugin" aria-label="OpenClaw native plugin architecture">
+        <rect class="node" x="55" y="128" width="700" height="470" rx="22" fill="url(#coralPanel)" stroke="#ff6e68" stroke-opacity=".64" stroke-width="1.5"/>
+        <path d="M78 128h654a23 23 0 0 1 23 23v55H55v-55a23 23 0 0 1 23-23z" fill="#ff6e68" opacity=".085"/>
+        <circle cx="88" cy="165" r="8" fill="#ff6e68" filter="url(#coralGlow)"/>
+        <text x="110" y="158" class="panel-kicker" fill="#ff8b84">OPENCLAW</text>
+        <text x="110" y="184" class="panel-title">Native runtime plugin</text>
+        <rect x="576" y="149" width="145" height="32" rx="16" fill="#ff6e68" opacity=".12" stroke="#ff8b84" stroke-opacity=".5"/>
+        <text x="648" y="170" text-anchor="middle" class="small" fill="#ffaaa5">AUTOMATIC HOOKS</text>
+
+        <g data-component-id="openclaw-auto-recall">
+          <rect x="83" y="230" width="304" height="128" rx="15" fill="#11162a" stroke="#ff756f" stroke-opacity=".4"/>
+          <circle cx="111" cy="258" r="12" fill="#ff706a" opacity=".16"/><path d="M106 258h10m-5-5v10" stroke="#ff8d87" stroke-width="1.7" stroke-linecap="round"/>
+          <text x="136" y="263" class="card-title">Auto-recall</text>
+          <text x="111" y="301" class="mono" fill="#ff8e87">before_agent_start</text>
+          <text x="111" y="328" class="body">Search, rank, inject memory context</text>
+        </g>
+        <g data-component-id="openclaw-auto-capture">
+          <rect x="423" y="230" width="304" height="128" rx="15" fill="#11162a" stroke="#ff756f" stroke-opacity=".4"/>
+          <circle cx="451" cy="258" r="12" fill="#ff706a" opacity=".16"/><path d="M446 258h10M451 253v10" stroke="#ff8d87" stroke-width="1.7" stroke-linecap="round"/>
+          <text x="476" y="263" class="card-title">Auto-capture</text>
+          <text x="451" y="301" class="mono" fill="#ff8e87">agent_end</text>
+          <text x="451" y="328" class="body">Last message pair · noise filtered</text>
+        </g>
+        <g data-component-id="openclaw-file-sync">
+          <rect x="83" y="386" width="304" height="158" rx="15" fill="#11162a" stroke="#ff756f" stroke-opacity=".32"/>
+          <text x="111" y="425" class="card-title">File sync</text>
+          <text x="111" y="455" class="body">Workspace memory files</text>
+          <text x="111" y="483" class="mono" fill="#c9d2e3">hash-tracked changes</text>
+          <rect x="111" y="507" width="106" height="20" rx="10" fill="#ff6e68" opacity=".1"/><text x="164" y="521" text-anchor="middle" class="small" fill="#ffaaa5">ON AGENT_END</text>
+        </g>
+        <g data-component-id="openclaw-tools">
+          <rect x="423" y="386" width="304" height="158" rx="15" fill="#11162a" stroke="#ff756f" stroke-opacity=".32"/>
+          <text x="451" y="425" class="card-title">OpenClaw access</text>
+          <text x="451" y="455" class="body">Agent: search · forget · correct · stats</text>
+          <text x="451" y="482" class="body">CLI: status · search · list · sync · remember · forget</text>
+          <rect x="451" y="507" width="114" height="20" rx="10" fill="#ff6e68" opacity=".1"/><text x="508" y="521" text-anchor="middle" class="small" fill="#ffaaa5">MANUAL ACCESS</text>
+        </g>
+      </g>
+
+      <g data-component-id="hermes-mcp-integration" aria-label="Hermes MCP integration architecture">
+        <rect class="node" x="845" y="128" width="700" height="470" rx="22" fill="url(#bluePanel)" stroke="#54bfff" stroke-opacity=".62" stroke-width="1.5"/>
+        <path d="M868 128h654a23 23 0 0 1 23 23v55H845v-55a23 23 0 0 1 23-23z" fill="#4dbbff" opacity=".075"/>
+        <circle cx="878" cy="165" r="8" fill="#58c4ff" filter="url(#blueGlow)"/>
+        <text x="900" y="158" class="panel-kicker" fill="#77d1ff">HERMES AGENT</text>
+        <text x="900" y="184" class="panel-title">MCP tool integration</text>
+        <rect x="1378" y="149" width="133" height="32" rx="16" fill="#4dbbff" opacity=".11" stroke="#73ccff" stroke-opacity=".5"/>
+        <text x="1444" y="170" text-anchor="middle" class="small" fill="#96dcff">USER-INVOKED</text>
+
+        <g data-component-id="hermes-stdio-transport">
+          <rect x="873" y="230" width="264" height="128" rx="15" fill="#10172b" stroke="#57c4ff" stroke-opacity=".4"/>
+          <text x="901" y="264" class="card-title">MCP transport</text>
+          <text x="901" y="301" class="mono" fill="#74d0ff">JSON-RPC over stdio</text>
+          <text x="901" y="328" class="body">stdout protocol · stderr diagnostics</text>
+        </g>
+        <path d="M1137 294h110" class="line" stroke="#55c7ff" stroke-width="2" marker-end="url(#arrowBlue)"/>
+        <text x="1192" y="280" text-anchor="middle" class="small" fill="#73ceff">TOOL CALLS</text>
+        <g data-component-id="hermes-tools">
+          <rect x="1247" y="230" width="270" height="128" rx="15" fill="#10172b" stroke="#57c4ff" stroke-opacity=".4"/>
+          <text x="1275" y="264" class="card-title">Memory Bank tools</text>
+          <text x="1275" y="300" class="body">search · remember · forget</text>
+          <text x="1275" y="328" class="body">correct · stats</text>
+        </g>
+
+        <g data-component-id="hermes-explicit-behavior">
+          <rect x="873" y="386" width="644" height="158" rx="15" fill="#0d1528" stroke="#54c0ff" stroke-opacity=".28"/>
+          <rect x="897" y="410" width="190" height="28" rx="14" fill="#52c1ff" opacity=".11"/>
+          <text x="992" y="429" text-anchor="middle" class="small" fill="#8bd8ff">EXPLICIT MCP REQUESTS</text>
+          <text x="897" y="470" class="card-title">No native runtime plugin</text>
+          <text x="897" y="497" class="body">No automatic recall or capture</text>
+          <text x="897" y="521" class="body">No lifecycle hooks</text>
+          <path d="M1194 414v104" stroke="#7185a7" stroke-opacity=".32"/>
+          <text x="1222" y="451" class="card-title">Schema validated</text>
+          <text x="1222" y="480" class="body">Annotated MCP tools</text>
+          <text x="1222" y="509" class="body">Profile allow-list ready</text>
+        </g>
+      </g>
+
+      <path d="M405 598v77" class="line" stroke="#ff766e" stroke-width="2.5" marker-end="url(#arrowCoral)"/>
+      <path d="M1195 598v77" class="line" stroke="#55c7ff" stroke-width="2.5" marker-end="url(#arrowBlue)"/>
+      <text x="429" y="642" class="small" fill="#ff9d97">PLUGIN API</text>
+      <text x="1088" y="642" class="small" fill="#82d5ff">MCP STDIO</text>
+
+      <g data-component-id="shared-scope" aria-label="Explicit matching scope controls sharing">
+        <rect x="270" y="674" width="1060" height="66" rx="18" fill="#121d32" stroke="#778cac" stroke-opacity=".45"/>
+        <rect x="294" y="690" width="190" height="34" rx="17" fill="#d6e2f5" opacity=".08"/>
+        <text x="389" y="712" text-anchor="middle" class="small" fill="#dce8fa">EXPLICIT CONFIGURATION</text>
+        <text x="519" y="712" class="card-title">Exact matching scopes enable cross-runtime sharing</text>
+        <text x="1078" y="712" class="mono" fill="#7ed9ef">{"user_id":"…"}</text>
+      </g>
+
+      <g data-component-id="shared-memory-core" aria-label="Shared Agent Platform Memory Bank operations">
+        <rect class="node" x="186" y="776" width="1228" height="116" rx="20" fill="url(#corePanel)" stroke="#65d1e9" stroke-opacity=".65" stroke-width="1.5"/>
+        <circle cx="222" cy="817" r="8" fill="#68d7ed" filter="url(#blueGlow)"/>
+        <text x="246" y="811" class="panel-kicker" fill="#7eddf0">SHARED CORE</text>
+        <text x="246" y="842" class="panel-title">Agent Platform Memory Bank operations</text>
+        <text x="246" y="869" class="body">Validated config · endpoint-keyed client reuse</text>
+        <g transform="translate(774 803)">
+          <rect width="110" height="34" rx="17" fill="#68d5ed" opacity=".1"/><text x="55" y="22" text-anchor="middle" class="small" fill="#8fe4f3">SEARCH</text>
+          <rect x="120" width="110" height="34" rx="17" fill="#68d5ed" opacity=".1"/><text x="175" y="22" text-anchor="middle" class="small" fill="#8fe4f3">CREATE</text>
+          <rect x="240" width="110" height="34" rx="17" fill="#68d5ed" opacity=".1"/><text x="295" y="22" text-anchor="middle" class="small" fill="#8fe4f3">DELETE</text>
+          <rect x="360" width="110" height="34" rx="17" fill="#68d5ed" opacity=".1"/><text x="415" y="22" text-anchor="middle" class="small" fill="#8fe4f3">CORRECT</text>
+          <rect x="480" width="110" height="34" rx="17" fill="#68d5ed" opacity=".1"/><text x="535" y="22" text-anchor="middle" class="small" fill="#8fe4f3">STATS</text>
+          <text x="295" y="66" text-anchor="middle" class="body">Similarity search · consolidation · pagination · recovery</text>
+        </g>
+      </g>
+
+      <path d="M800 892v29" class="line" stroke="#72d8ee" stroke-width="2.5" marker-end="url(#arrowCore)"/>
+      <g data-component-id="agent-platform-service" aria-label="Google Cloud Agent Platform Memory Bank service">
+        <rect x="414" y="927" width="772" height="53" rx="18" fill="url(#agentPlatformPanel)" stroke="#6bbcff" stroke-opacity=".7"/>
+        <text x="800" y="950" text-anchor="middle" class="card-title">Agent Platform Memory Bank · Google Cloud</text>
+        <text x="800" y="970" text-anchor="middle" class="small" fill="#a8d8ff">GOOGLE CLOUD SDK · APPLICATION DEFAULT CREDENTIALS</text>
+      </g>
+    </svg>

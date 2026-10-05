@@ -4,27 +4,73 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./hermes-mcp": {
+      "types": "./dist/hermes-mcp.d.ts",
+      "import": "./dist/hermes-mcp.js"
+    },
+    "./memorybank-core": {
+      "types": "./dist/memorybank-core.d.ts",
+      "import": "./dist/memorybank-core.js"
+    }
+  },
+  "bin": {
+    "agent-platform-memorybank-hermes": "./bin/hermes-mcp.js"
+  },
   "openclaw": {
     "extensions": [
       "./dist/index.js"
     ]
   },
   "files": [
+    "bin",
     "dist",
     "openclaw.plugin.json",
-    "README.md"
+    "README.md",
+    "FAQ.md",
+    "architecture.jpg",
+    "architecture.svg"
   ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepare": "npm run build",
+    "prepack": "npm run clean && npm run build",
+    "render:architecture": "node scripts/render-architecture.mjs"
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "sharp": "^0.34.5",
     "typescript": "^5.3.0"
   },
   "dependencies": {
     "@google-cloud/aiplatform": "^6.5.0"
-  }
+  },
+  "description": "Managed Agent Platform Memory Bank integration for OpenClaw plugins and Hermes MCP tools.",
+  "keywords": [
+    "openclaw",
+    "hermes",
+    "mcp",
+    "agent-platform",
+    "memory-bank",
+    "google-cloud",
+    "long-term-memory"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Shubhamsaboo/google-memorybank-plugin.git"
+  },
+  "homepage": "https://github.com/Shubhamsaboo/google-memorybank-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/Shubhamsaboo/google-memorybank-plugin/issues"
+  },
+  "license": "MIT"
 }
