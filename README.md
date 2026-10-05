@@ -26,16 +26,17 @@ Memories are extracted facts, not raw conversation logs. OpenClaw recalls only r
 
 ## Integration capabilities
 
-| Capability | OpenClaw plugin | Hermes MCP server |
-| --- | --- | --- |
-| Native lifecycle auto-recall | Yes, before each agent turn | No; an agent invokes `memorybank_search` explicitly |
-| Native lifecycle auto-capture | Yes, after substantive turns | No; an agent invokes `memorybank_remember` explicitly |
-| Workspace memory-file sync | Yes | No |
-| Reasoning-engine topic sync | Yes, on plugin startup | No |
-| Memory operations | OpenClaw agent tools and CLI commands | Five user-invoked MCP tools over stdio |
-| Shared memory | Yes, with matching project, location, reasoning engine, and scope | Yes, with the same matching configuration |
+| Capability | OpenClaw plugin | Hermes native provider | Hermes MCP server |
+| --- | --- | --- | --- |
+| Native lifecycle auto-recall | Yes, before each agent turn | Yes, before each turn | No; an agent invokes `memorybank_search` explicitly |
+| Native lifecycle auto-capture | Yes, after substantive turns | Yes, after each turn | No; an agent invokes `memorybank_remember` explicitly |
+| Workspace memory-file sync | Yes | Mirrors `MEMORY.md`/`USER.md` writes | No |
+| Reasoning-engine topic sync | Yes, on plugin startup | No | No |
+| Memory operations | OpenClaw agent tools and CLI commands | Five agent tools, `hermes vertex-memory` CLI | Five user-invoked MCP tools over stdio |
+| Configuration UI | `openclaw.json` | Hermes admin dashboard Memory panel | `config.yaml` |
+| Shared memory | Yes, with matching project, location, reasoning engine, and scope | Yes, with the same matching configuration | Yes, with the same matching configuration |
 
-Hermes has **no native lifecycle auto-recall or auto-capture**. Its MCP server exposes only explicit, user-invoked tools.
+The Hermes MCP server exposes only explicit, user-invoked tools. For lifecycle auto-recall/capture in Hermes, use the [native provider](hermes/vertex-memory/README.md).
 
 ## Prerequisites
 
@@ -115,6 +116,16 @@ openclaw restart
 ### Bootstrapping from existing sessions
 
 After installation, ask the agent to generate memories from selected prior sessions. The agent can parse that history and submit it for extraction; review scope and source content before backfilling.
+
+## Install: Hermes native provider
+
+```bash
+hermes plugins install Shubhamsaboo/google-memorybank-plugin/hermes/vertex-memory
+hermes plugins enable vertex-memory
+hermes config set memory.provider vertex-memory
+```
+
+Configure it in the Hermes admin dashboard (Memory panel). See [`hermes/vertex-memory/README.md`](hermes/vertex-memory/README.md).
 
 ## Install: Hermes MCP server
 
@@ -363,6 +374,9 @@ npm ci
 npm run build
 npm test
 npm pack --dry-run
+
+# Hermes native provider
+cd hermes/vertex-memory && pip install -r requirements-dev.txt && pytest -q
 ```
 
 ## License
